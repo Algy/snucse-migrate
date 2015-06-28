@@ -1,0 +1,799 @@
+UID conversion rule
+    if uid is of comment
+        uid -> MAX(uid) else
+        uid -> uid
+
+
+Article <- article
+    -- WING --
+    Useless
+        user_email
+        user_homepage
+        ip
+        relate: 부모 글. (최상위 부모의 경우 자기 자식을 가리킴. 답글이 없을 경우 null) 
+        is_not_exposed
+
+    Unspecified
+        comment_count
+        commented_time
+        
+    Unclassified
+        number: 게시판 별 번호
+        position: 보여지는 순서
+        depth: 답글 깊이 
+        bucket
+
+        user_account : 그냥 id (익명게시판 null)
+        user_name : 그냥 이름
+
+    ---CLOUD---
+    comment_count
+        &
+    recomend_count
+        &recommendation_count
+
+    uid : Integer
+        &
+    is_notice : Boolean
+        &
+    title : Unicode
+        &subject
+    content : Unicode
+        &
+    author_id : Integer, nullable
+        &user_uid
+    anonymous : JSONEncodedDict
+        익명으로 글싼것의 정보를 저장하는 것인듯.
+        -> anonimity.py
+        &user_password
+    view_count : Integer
+        &hit
+    created_at : Datetime
+        &time (NOTE: 일정 게시판에서는 이거 일정 날짜로 설정됨)
+    parent_article_id : Integer, ForeignTo(Article.uid), nullable
+        &relate
+    ancestor_article_id : Integer, ForeignTo(Article.uid), nullable
+        &parent_article_id의 ancestor
+    render_type: 
+        &render_type("html", "text", "htmlbr" ...)
+
+    n:n <- 1:n
+    ==
+        BoardAndArticle.article_id <- self.uid
+        BoardAndArticle.baord_uid <- &board_uid
+
+    - relation with
+        author -> User.uid == author_id
+        boards -> 
+            Article.uid == BoardAndArticle.article_id
+            # BoardAndArticle은 article_uid와 board_uid만 들어있는 association table
+        parent_article -> parent_article_id == Article.uid
+        ancestor_article -> # 똑같은데 최상단 선조
+
+Comment <- comment
+    -- WING --
+    Useless
+
+    Unspecified
+        ip
+
+    Unclassified
+        user_account: Maybe anonymous
+        user_name: Maybe anonymous
+        relate: 부모 코멘트. (최상위 부모의 경우 자기 자식을 가리킴. 답글이 없을 경우 null)
+    -- CLOUD --
+    comment_count: !NEW
+    recommend_count:
+        &recommendation_count
+    uid : Integer
+        &id (아마도 날개에서는 comment는 UIDMIXIN에 포함 안되는듯)
+    author_id : ForeignKey(User.uid), nullable
+        &user_uid
+    anonymous
+        &user_password
+    parent_id : Integer, ForeignKey(Base.uid)
+        &parent_uid
+    parent_comment_id : ForeignKey(Comment.uid)
+        &relate
+    display_order : Integer, default=0, indexed
+        &position
+    reply_display_order : Integer, default=0, indexed
+        &depth_position
+    content: Unicode
+        &
+    created_at : Datetime
+        &time
+    - relation with
+        author -> author_id == User.uid
+        parent -> parent_id == Base.uid
+#  parent = relationship('Base', primaryjoin=(Base.uid == parent_id), backref=backref('comments', order_by=(display_order, reply_display_order), passive_deletes=True))
+        parent_comment -> parent_comment_id == Comment.uid
+
+
+Tag <- tag
+    -- WING --
+    Useless
+        count: 태그 몇개 쓰이는지?
+    -- CLOUD --
+    id : autoinc, primary key
+        &
+    name : Unicode, unique
+        &
+    creator_id : ForeignKey(User.uid)
+        &user_uid
+
+    - relation with
+        creator -> creator_id == User.uid
+        related_tags ->
+            primary -> id == RelatedTag.c.tag_1_id
+            secondary -> id == RelatedTag.c.tag_2_id
+
+
+AttachedTag <- tag_parent_relation 
+    -- WING --
+    -- CLOUD --
+    id : autoinc, primary key
+        &id
+    tag_id : ForeignKey(Tag.id)
+        &tag_id
+    target_id : ForeignKey(Base.id)
+        &parent_uid
+    creator_id : ForeignKey(User.id)
+        &user_uid
+    created_at : Datetime
+        &time
+    area : JSONEncodedDict
+        &extra
+            {
+                T: float (top)
+                L: float (left)
+                W: float (width)
+                H: float (height)
+            }
+
+    - relation with
+        tag -> tag_id == Tag.id
+        target -> target_id == Base.uid
+        creator -> creator_id == User.uid
+
+RelatedTag <- tag_relation
+    -- WING --
+        Useless
+            user_name
+        Unspecified
+            
+    -- CLOUD --
+    # assoctable
+    id : primary_key
+    tag_1_id : primary_key
+        &parent_id
+    tag_2_id : primary_key
+        &id
+    related_by_id: 연관 태그 만든사람
+        &user_uid
+    related_at:
+        &time
+
+
+Mention: !NEW
+    id : autoinc, primary_key
+    mentioning_user_id : ForeignKey(User.uid)
+    mentioning_id : ForeignKey(Base.uid)
+    target_id : ForeignKey('Base.uid')
+    target_user_id : ForeignKey('User.uid', ondelete='cascade'),
+    target_type : Choice(['User', 'Article', 'Comment'])
+    created_at : DateTime
+
+    - relation with
+        mentioning_user -> mentioning_user_id = User.uid 
+        target -> Mention.target_id == Base.uid
+        target_user -> Mention.target_user_id == User.uid
+
+
+BestArticle <- best_article
+    -- WING --
+    -- CLOUD --
+    id : autoinc, primary
+        &
+    year: Integer, index
+        &
+    month: Integer, index, nullable
+        &
+    week: Integer, index, nullable
+        &
+    articles: JSONArray( (Article.uid, 추천수) list )
+        &(article_uid, "week ) list
+
+BoardAndArticle: !NEW 
+    @See Board
+
+    id
+    board_id
+    article_id
+
+Board <- board
+    -- WING --
+        Useless
+            maximum_position
+            maximum_bucket
+            cafe_uid
+        Unspecified
+            cafe_uid
+    -- CLOUD --
+    uid
+        &
+    name : Unicode
+        &
+    board_type : choice of ('normal', 'album', 'forum', )
+        &type
+    last_updated_at : Datetime
+        &last_updated_time
+    admin_id : ForeignKey(User.uid)
+        &god_uid
+    article_count : Integer
+        &(next_number - 1)
+
+
+    - relation with
+        _admin -> User
+            admin_id == User.uid
+        articles -> Article
+            primary -> uid  == BoardAndArticle.c.baord_id
+            secondary -> BoardAndArticle
+        group -> Group
+            primary -> Board.uid == GroupMenu.board_uid
+            secondary -> GroupMenu.__table__
+            uselist -> False
+
+
+Favorite <- favorite
+    -- WING --
+    -- CLOUD --
+    id
+        &
+    user_id: ForeignKey (User.uid)
+        &user_uid
+    target_id: ForeignKey (Base.uid)
+        &target_uid
+    name
+        &
+        if true -> name이 emptystring
+    order
+        &position
+
+    - relation with
+        user -> User
+            user_id == User.uid
+        target -> Base
+            target_id == Base.uid
+            use_list = False
+
+Group <- cafe
+    -- WING --
+        Useless
+            parent_cafe_uid
+            name
+    -- CLOUD --
+    uid
+        &
+    name
+        &title
+    admin_id: ForeignKey(User.uid)
+        &god_uid
+    main_page: Unicode
+        &front_page_uid (Article에 저장 안하고 직접 string으로 저장함)
+    last_updated_at: Datetime
+        &last_updated_time
+    article_count
+        !NEW
+    is_public
+        &
+    public_password
+        &password
+    - relation with
+        admin -> User
+
+GroupMenu <- cafe_link
+    -- WING --
+        Useless
+            name
+    -- CLOUD --
+    id 
+        &
+    group_id: Foreign(Group.uid)
+        &cafe_uid
+    board_uid: Foreign(Board.uid)
+        &internal_uid (Partially. internal_uid can be either uid of "board" or uid of "cafe")
+    menu_type: choice of (u'board', u'link', u'text', u'indent', u'outdent', )
+        &type or &is_internal_link
+    url: Unicode
+        &external_url
+    name: Unicode
+        &name
+    position: Integer
+        &
+
+    - relation with
+        group -> Group
+        board -> Board
+
+
+
+
+
+MessageThread: !NEW
+    id
+    user1_id: ForeignKey('User.uid')
+    user2_id: ForeignKey('User.uid')
+    last_updated_at:  DateTime 
+    _last_content: UnicodeText
+
+
+    - relation
+        user1 -> User
+            primaryjoin='MessageThread.user1_id == User.uid'
+        user2 -> User
+            primaryjoin='MessageThread.user2_id == User.uid'
+        messages -> Message
+            order_by='Message.sent_at.asc()'
+
+Message <- message
+    -- WING --
+        Useless
+            is_deleted_by_sender
+            is_deleted_by_receiver
+            is_read_by_receiver
+    -- CLOUD --
+    id
+        &
+    sender_id
+    sender_username
+    sender_realname
+        &sender_uid
+
+    receiver_username
+    receiver_realname
+    receiver_id: ForeignKey(User.uid)
+        &receiver_uid
+    _content: Unicode
+        &content
+    sent_at: Datetime
+        &sent_time
+    read_at: Datetime
+        !NEW
+    thread_id : ForeignKey(MessageThread.id)
+        !NEW
+
+NotificationLog: !NEW
+    id
+    type: choice of ['comment', 'tag', 'recommend', 'article', 'mention', ]
+    sub_type: choice of ['article', 'comment', 'commented_article', 'favorite', 'user', ]
+    receiver_id:  ForeignKey(User.uid)
+    target_id: ForeignKey(Base.uid)
+
+    created_at: Datetime
+    last_updated_at: Datetime
+    senders: JSONEncodedDict
+        list:  list of {
+            sender_id: number
+            sender_realname: string
+            content: string
+            content_id: number. optional.
+        }
+
+Panorama
+    -- WING --
+        Useless
+            target_name
+            board_name
+            cafe_title
+            user_name
+            type_bucket
+            bucket
+    -- CLOUD --
+    id
+        &
+    type: choice of ['article', 'comment', 'tag', 'group']
+        & 
+
+        "article" -> "article"
+        "cafe" -> "gruop"
+        "dolblog" -> x
+        "user" -> x
+        "comment" -> "comment"
+        "commented" -> x
+        "tag" -> "tag"
+
+        
+        but, ["commented", "article", "cafe", "dolblog", "user", "comment", "tag"]
+
+    event: choice of ['add', 'modify', 'move', 'remove', 'survey_start',
+                      'survey_end', 'article', 'group', 'user', 'file',
+                      'add_rel', 'remove_rel', 'add_menu', 'remove_menu',
+                      'add_board', 'remove_board', 'new']
+        &
+        but, ["addrel", "invalid", "app", "modify", 
+              "survey_start", "removerel", "article",
+              "cafe", "file", "remove", "move", "dolblog",
+              "add_link", "add", "user", "remove_link"]
+
+            "addrel" -> "add_rel"
+            "invalid" -> x
+            "app" -> x
+            "modify" -> "modify"
+            "survey_start" -> "survey_start"
+            "removerel" -> "remove_rel"
+            "article" -> "article"
+            "cafe" -> "group"
+            "file" -> "file"
+            "remove" -> "remove"
+            "move" -> "move"
+            "dolblog" -> x
+            "add_link" -> "add_menu"
+            "add" -> "add"
+            "user" -> "user"
+            "remove_link" -> "remove_menu"
+
+
+    from_group_id: ForeignKey('Group.uid')
+        &cafe_uid
+    from_board_id = ForeignKey('Board.uid')
+        &board_uid
+    user_id = ForeignKey('User.uid')
+        &user_uid
+    target_id = ForeignKey('Base.uid')
+        &target_uid
+    content : UnicodeText
+        !NEW
+    created_at : DateTime
+        &time
+
+Survey <- survey
+    -- WING --
+        Useless
+            is_started
+            is_temporary_saved
+        Unspecified
+            is_psychological_test: 이게 true면 좀.... 따로 처리... 
+            period: 이걸 period created_at을 만드는데 쓴다.
+    -- CLOUD --
+    id
+        &
+    name 
+        &subject
+        &due
+    parent_id: ForeignKey('Article.uid')
+        &article_uid
+    owner_id:  ForeignKey('User.uid')
+        &user_uid
+    is_anonymous: Boolean
+        &
+    permission_type:  choice of ['all', 'select', 'except', 'firstcome']
+        &
+    permission_value:  Unicode
+        &permission
+    expose_level:  Integer
+        &
+    min_vote_num: Integer
+        &minimum_number_of_votes
+    _answered_user: JSONLIST 
+        & From association TABLE (survey_id, user_uid)
+          (in survey_participant)
+    created_at: Datetime
+        !NEW
+
+
+SurveyQuestion <- survey_question
+    -- WING --
+        Unspecified
+            count
+
+    -- CLOUD --
+    id
+        &
+    content: Unicode
+        &question
+    min_answers: Integer
+        &lower_bound
+    max_answers: Integer
+        &upper_bound
+    _examples: JSONList
+        & (survey_option의 1:n구조를 string list로 저장,
+           survey_option.option)
+    survey_id: ForeignKey('Survey.id')
+        &servey_id
+    order: Integer
+        &number
+
+SurveyAnswer: <- survey_participant
+    id
+    survey_question_id: ForeignKey('SurveyQuestion.id')
+        &(survey_option
+    user_id: ForeignKey('User.uid')
+    answer: Integer
+        index of SurveyQuestion._example
+        &survey_selection.choice_id에서 추론
+
+
+AccessibleGroup: !NEW
+    user_id
+    group_id
+
+    
+User <- user
+    -- WINGS --
+    예시) 조조교
+        account: "sky"
+        name: "조승현"
+        is_birthday_lunar: 0
+        bs_number: 2008-11724
+        ms_number: null
+        phd_number: null
+        graduate_time: 1960-01-01-01 ...
+        article_uid: 메인페이지
+        signature: 시그니쳐
+        is_signature_enabled: 
+        has_ad_account: AD 계정 있는지
+        default_render_type: htmlbr
+        bs_year: 2008
+        photo_uid: null (pointer to file.uid)
+        extra_information: {cl: ? , bsNumber: "" or "2013-11565", birth: "1994-..."} // 기타사항? 버렷!
+
+    -- 
+    uid
+        &
+    username 
+        &account
+    _password 
+        &salt안된? password (nullable)
+    salt
+        &인증 방식이 다름ㅋ
+    realname
+        &name
+    email
+        &user_email.email 
+        # CONFLICT: 1:n ->  1:1
+    phone
+        &user_phone_number.phone_number 
+        # 1:n -> 1:1
+    birthday 
+        &birthday
+    bs_year: Integer
+        &bs_year
+    ms_year: Integer
+        &ms_number에서 유추
+    phd_year: Integer
+        &phd_number에서 유추
+    info: JSONEncodedDict
+        {
+            'bs_number' : &bs_number
+            'ms_number' : &ms_number
+            'phd_number' : &phd_number
+            'classes': &user_class.class # 1:n -> embeded
+            'graduate': &graduate_time?
+            'signature': &signature
+            'profile': ? 
+        }
+    classes:  Unicode, default=u'bachelor'
+        &user_class.class 
+    state:  choice of [u'pending', u'normal', u'admin'])
+        pending -> &TABLE applicant, applicant_associate, applicant_class, applicant_upgrade, applicant_upgrade_class
+            에서 유추
+        admin -> 
+            wings_operator에서 유추
+        
+    photo_id:  ForeignKey('File.uid', ondelete='set null')
+        &photo_uid
+
+FindPasswordKey
+    -- WING --
+    Unspecified
+        ip
+    -- CLOUD --
+    id
+        &
+    user_id:  ForeignKey('User.uid')
+        &user_uid
+    key:  Unicode
+        &
+    created_at:  DateTime
+        &time
+
+
+File
+    -- WING --
+        Useless
+            hit
+    -- CLOUD --
+    uid
+    filename # filename은 실제로 파일이 저장된 경로를 의미하고, upload_filename은 유저가 파일을 올렸을 때 해당 파일의 실제 이름을 의미한다. 
+        !NEW
+    upload_filename
+        &name?
+    mime
+        !NEW
+    filesize
+        &size
+    parent_id
+        &parent_uid
+    author_id 
+        !NEW
+    created_at
+        &time
+
+Recommend <- article_recommendation, comment_recommendation
+    -- WINGS --
+    article_recommendation
+        article_uid 
+        user_uid: (user uid는 해싱 되어있.)
+        time: datetime
+    commnet_recommendation
+        comment_id
+        user_uid
+        time
+    
+
+
+== TABLE간 비교 ==
+날개에 있는데 구름에 없는 table
+api_key
+app
+app_api_role_relation
+app_role
+app_statistics
+app_user
+applicant[_.*]  -> user
+---> TODO
+
+article_recommendation --
+comment_recommendation --|--> 모델 아직 안만들어짐 TODO
+
+autologin: abandon
+
+calander_filter
+
+dolblog -> 나~~~아중에
+dolblog_front_page
+dolblog_post
+dolblog_post_reader
+dolblog_subscriber
+
+favorite_back_reference_count
+
+mailing_list[_.*] -> Realworld data 보고 
+    mailing_list_group
+        id
+        name
+        title
+        admin_type
+        admin_uid: 1
+    .. 05학번 레코드 하나밖에 없다... 
+    abandon it!
+
+article.uid  - map_article_id - map_file_id 
+               article.uid <-> article_id ,  article_id <-> file_uid
+
+user.uid  - map_user_id - map_photo_file_id -
+          user.uid <-> user_id, user_id <-> file_uid
+
+map_board_id 
+    baord_id <-> board_uid
+
+map_survey_board
+    survey_name <-> board_uid
+
+map_survey_id // ????????? survey_id의 불일치?
+    survey_id <-> article_uid
+
+
+modifyemail_key: abandon
+online_user: abandon
+
+panorama_maximum_bucket
+preivous_board_type
+reserved_account: user로 합쳐짐
+
+search_string: abandon
+
+temporary_saved_article: abandon
+temporary_saved_file: abandon
+
+trackback: abandon
+uid_list
+
+user_accountservice
+    user_uid, has_mailaccount, has_dbaccount
+user_address
+    user_uid, address(서울시 관악구 봉천동 등), is_public
+user_class -> emdeded to user
+    user_uid
+    class
+        "professor"
+        "phd_degree"
+        "phd"
+        "others"
+        "bachelor_degree"
+        "minor"
+        "bachelor"
+        "major"
+        "master"
+        "master_degree"
+
+///// 다아아아아아아아아아아아아아
+user_environment: TODO
+    user_uid
+    단축키 설정 같은거 너놓는 건데... 날리잣!
+
+user_homepage: embeded to user
+    user_uid
+    hompage: "http://,,"
+    is_public: 0 or 1
+
+user_initialized: "pending"을 결정하는 테이블
+    스누씨1 or 스누씨2
+    지금은 필요없다
+
+user_job -> embeded to user
+    user_uid
+    job
+    is_public
+    
+user_phone_number -> embeded to user
+    (1:n)
+    user_uid 
+    phone_number_type
+        [{u'phone_number_type': u'office'},
+         {u'phone_number_type': u'lab'},
+         {u'phone_number_type': u'prof.room'},
+         {u'phone_number_type': u'home'},
+         {u'phone_number_type': u'cell'}]
+    phone_number
+    is_public
+
+user_email -> embeded to user
+    user_uid
+    email
+    is_public
+    
+user_stylesheet -> cloud TODO
+    user_uid
+    is_stylesheet_enable
+    stylesheet
+
+/////// 머지이이이이이이 
+
+widget[_.*] : abandon
+
+// 내용 확인
+wings_god
+    only a record, (uid: 2977): 이름 "관리자"
+wings_operator
+    4 records,
+        "최종식"
+        "황원근"
+        "지은상"
+        "백은옥"
+wings_setting: abandon
+
+
+--- TODO: Global PostProcessing --
+ * Article의 ancestor_article_id. Done.
+ * Comment의 comment_count. Done.
+ * 실제 file 데이터 옮기기
+     File 테이블의 filename 필드는 옮기는 과정에서 랜덤 생성 하였으니 DB 따라서 알아서 옮겨야함.
+ * Group의 article_count 세서 추가하기. Done
+ * User의 photo_id를 알맞게 고치기. Done.
+
+ --
+ * Survey의 is_psychological_test가 true인 경우.
+ * App 옮기기
+    app의 경우, app을 parent로 하는 File, Comment까지 함께 옮겨야 한다.
+    App(369861) 
+    App(370074) 
+    App(371314) 
+    App(382238) 
+
+  * Dolblog 옮기기
+    돌블로그를 옮길 때, 그 돌블로그를 target으로 하는 Favorite, AttachedTag, Comment까지 함께 옮겨야한다.
+
+

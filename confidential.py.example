@@ -1,0 +1,2 @@
+POSTGRESQL_PASSWORD = 'input your snucse-postgresql password'
+SQLSERVER_PASSWORD = 'input your snucse-sqlserver password'
